@@ -96,27 +96,35 @@ temporadas_dict = {season: id for id, season in cursor.execute("SELECT ID_Tempor
 fechas_dict = {fecha: id for id, fecha in cursor.execute("SELECT ID_Fecha, Fecha FROM Dim_Fecha").fetchall()}
 # Obtener los ID de los resultados desde la base de datos
 resultados_dict = {descripcion: id for id, descripcion in cursor.execute("SELECT ID_Resultado, Descripcion FROM Dim_Resultado").fetchall()}
+id_resultado_desconocido = resultados_dict.get("Desconocido", None)  # Obtener ID de 'Desconocido' si existe
 
-# Insertar partidos
+import numpy as np  # Asegurarnos de manejar valores NaN correctamente
+
 for _, row in df.iterrows():
-    # Convertir la fecha del DataFrame al formato correcto (YYYY-MM-DD)
     fecha_dt = datetime.strptime(row["Date"], "%d-%m-%Y")
-    fecha_str = fecha_dt.strftime("%Y-%m-%d")  # Formato YYYY-MM-DD
+    fecha_str = fecha_dt.strftime("%Y-%m-%d")
 
-    # Obtener el ID de la fecha desde el diccionario fechas_dict
     id_fecha = fechas_dict.get(fecha_str)
-
     if id_fecha is None:
         print(f"Advertencia: La fecha {fecha_str} no está en Dim_Fecha.")
-        continue  # Si la fecha no está en la base de datos, saltar a la siguiente fila
+        continue  
 
-    id_temporada = temporadas_dict[row["Season"]]
-    id_equipo_local = equipos_dict[row["HomeTeam"]]
-    id_equipo_visitante = equipos_dict[row["AwayTeam"]]
+    id_temporada = temporadas_dict.get(row["Season"], None)
+    id_equipo_local = equipos_dict.get(row["HomeTeam"], None)
+    id_equipo_visitante = equipos_dict.get(row["AwayTeam"], None)
 
-    # Obtener los ID de resultado para el resultado final y al medio tiempo
-    id_resultado_final = resultados_dict[row["FTR"]]  # Resultado final (H, A, D)
-    id_resultado_ht = resultados_dict[row["HTR"]]  # Resultado al medio tiempo (H, A, D)
+    id_resultado_final = resultados_dict.get(row["FTR"], None)
+    id_resultado_ht = resultados_dict.get(row["HTR"], None)
+
+    # Convertir a enteros, reemplazando NaN con 0
+    goles_local = int(row["FTHG"]) if not pd.isna(row["FTHG"]) else 0
+    goles_visitante = int(row["FTAG"]) if not pd.isna(row["FTAG"]) else 0
+    goles_ht_local = int(row["HTHG"]) if not pd.isna(row["HTHG"]) else 0
+    goles_ht_visitante = int(row["HTAG"]) if not pd.isna(row["HTAG"]) else 0
+
+    if None in [id_temporada, id_equipo_local, id_equipo_visitante, id_resultado_final, id_resultado_ht]:
+        print(f"Advertencia: Datos faltantes en partido {row['HomeTeam']} vs {row['AwayTeam']} en {fecha_str}. Omitiendo inserción.")
+        continue  # Evita insertar si falta algún ID clave
 
     cursor.execute("""
         INSERT INTO HechosPartidos (ID_Temporada, ID_Equipo_Local, ID_Equipo_Visitante, ID_Fecha, 
@@ -124,11 +132,12 @@ for _, row in df.iterrows():
                                     Goles_HT_Local, Goles_HT_Visitante, ID_Resultado_HT) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                    id_temporada, id_equipo_local, id_equipo_visitante, id_fecha,
-                   row["FTHG"], row["FTAG"], id_resultado_final,
-                   row["HTHG"], row["HTAG"], id_resultado_ht)
+                   goles_local, goles_visitante, id_resultado_final,
+                   goles_ht_local, goles_ht_visitante, id_resultado_ht)
 
 conn.commit()
 print("Partidos insertados correctamente.")
+
 
 
 
